@@ -7,6 +7,7 @@
 #include "sentry_string.h"
 #include "sentry_sync.h"
 #include "sentry_transport.h"
+#include "sentry_utils.h"
 
 #include <curl/curl.h>
 #include <curl/easy.h>
@@ -14,6 +15,7 @@
 #include <string.h>
 
 typedef struct curl_transport_state_s {
+    sentry_dsn_t *dsn;
     CURL *curl_handle;
     char *http_proxy;
     char *ca_certs;
@@ -33,9 +35,8 @@ sentry__curl_bgworker_state_new(void)
     if (!state) {
         return NULL;
     }
+    memset(state, 0, sizeof(curl_bgworker_state_t));
 
-    state->http_proxy = NULL;
-    state->ca_certs = NULL;
     state->curl_handle = curl_easy_init();
     state->ratelimiter = sentry__rate_limiter_new();
 
@@ -47,6 +48,7 @@ sentry__curl_bgworker_state_free(void *_state)
 {
     curl_bgworker_state_t *state = _state;
     curl_easy_cleanup(state->curl_handle);
+    sentry__dsn_decref(state->dsn);
     sentry__rate_limiter_free(state->ratelimiter);
     sentry_free(state->ca_certs);
     sentry_free(state->http_proxy);
@@ -65,9 +67,10 @@ sentry__curl_transport_start(
     sentry_bgworker_t *bgworker = (sentry_bgworker_t *)transport_state;
     curl_bgworker_state_t *state = sentry__bgworker_get_state(bgworker);
 
-    state->debug = options->debug;
+    state->dsn = options->dsn ? sentry__dsn_incref(options->dsn) : NULL;
     state->http_proxy = sentry__string_clone(options->http_proxy);
     state->ca_certs = sentry__string_clone(options->ca_certs);
+    state->debug = options->debug;
 
     sentry__bgworker_start(bgworker);
 }
@@ -117,8 +120,8 @@ sentry__curl_send_task(void *_envelope, void *_state)
     sentry_envelope_t *envelope = (sentry_envelope_t *)_envelope;
     curl_bgworker_state_t *state = (curl_bgworker_state_t *)_state;
 
-    sentry_prepared_http_request_t *req
-        = sentry__prepare_http_request(envelope, state->ratelimiter);
+    sentry_prepared_http_request_t *req = sentry__prepare_http_request(
+        envelope, state->dsn, state->ratelimiter);
     if (!req) {
         return;
     }
