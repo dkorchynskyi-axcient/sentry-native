@@ -286,7 +286,7 @@ sentry__dsn_decref(sentry_dsn_t *dsn)
 char *
 sentry__dsn_get_auth_header(const sentry_dsn_t *dsn)
 {
-    if (!dsn) {
+    if (!dsn || !dsn->is_valid) {
         return NULL;
     }
     sentry_stringbuilder_t sb;
@@ -315,7 +315,7 @@ init_string_builder_for_url(sentry_stringbuilder_t *sb, const sentry_dsn_t *dsn)
 char *
 sentry__dsn_get_envelope_url(const sentry_dsn_t *dsn)
 {
-    if (!dsn) {
+    if (!dsn || !dsn->is_valid) {
         return NULL;
     }
     sentry_stringbuilder_t sb;
@@ -327,7 +327,7 @@ sentry__dsn_get_envelope_url(const sentry_dsn_t *dsn)
 char *
 sentry__dsn_get_minidump_url(const sentry_dsn_t *dsn)
 {
-    if (!dsn) {
+    if (!dsn || !dsn->is_valid) {
         return NULL;
     }
     sentry_stringbuilder_t sb;

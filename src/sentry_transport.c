@@ -118,6 +118,10 @@ sentry_prepared_http_request_t *
 sentry__prepare_http_request(sentry_envelope_t *envelope,
     const sentry_dsn_t *dsn, const sentry_rate_limiter_t *rl)
 {
+    if (!dsn || !dsn->is_valid) {
+        return NULL;
+    }
+
     size_t body_len = 0;
     bool body_owned = true;
     char *body = sentry_envelope_serialize_ratelimited(
