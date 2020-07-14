@@ -16,6 +16,7 @@ if not has_crashpad:
 # Windows and Linux are currently able to flush all the state on crash
 flushes_state = sys.platform != "darwin"
 
+
 def test_crashpad_capture(cmake, httpserver):
     tmp_path = cmake(["sentry_example"], {"SENTRY_BACKEND": "crashpad"})
 
@@ -47,7 +48,7 @@ def test_crashpad_crash(cmake, httpserver):
     )
     assert child.returncode  # well, its a crash after all
 
-    run(        tmp_path, "sentry_example", ["log", "no-setup"], check=True, env=env    )
+    run(tmp_path, "sentry_example", ["log", "no-setup"], check=True, env=env)
 
     time.sleep(2)  # lets wait a bit for crashpad sending in the background
 
@@ -58,7 +59,9 @@ def test_crashpad_crash(cmake, httpserver):
     )
 
     envelope = Envelope.deserialize(session)
-    assert_session(envelope, {"status": "crashed" if flushes_state else "abnormal", "errors": 0})
+    assert_session(
+        envelope, {"status": "crashed" if flushes_state else "abnormal", "errors": 0}
+    )
 
     # TODO: crashpad actually sends a compressed multipart request,
     # which we don’t parse / assert right now.
@@ -79,7 +82,6 @@ def test_crashpad_dump_inflight(cmake, httpserver):
     assert child.returncode  # well, its a crash after all
 
     run(tmp_path, "sentry_example", ["log", "no-setup"], check=True, env=env)
-
 
     time.sleep(2)  # lets wait a bit for crashpad sending in the background
 

@@ -7,7 +7,9 @@ extern "C" {
 #include "sentry_database.h"
 #include "sentry_options.h"
 #include "sentry_path.h"
+#include "sentry_sync.h"
 #include "sentry_transport.h"
+#include "sentry_unix_pageallocator.h"
 #include "sentry_utils.h"
 }
 
