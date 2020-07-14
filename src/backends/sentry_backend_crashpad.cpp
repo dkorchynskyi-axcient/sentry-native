@@ -7,6 +7,7 @@ extern "C" {
 #include "sentry_database.h"
 #include "sentry_options.h"
 #include "sentry_path.h"
+#include "sentry_transport.h"
 #include "sentry_utils.h"
 }
 
@@ -35,6 +36,10 @@ extern "C" {
 #endif
 
 extern "C" {
+
+#ifdef SENTRY_PLATFORM_WINDOWS
+static LPTOP_LEVEL_EXCEPTION_FILTER g_previous_handler = NULL;
+#endif
 
 typedef struct {
     crashpad::CrashReportDatabase *db;
@@ -87,13 +92,41 @@ sentry__crashpad_backend_flush_scope(
     }
 }
 
-static void
-sentry__crashpad_backend_shutdown(sentry_backend_t *backend)
+#ifdef SENTRY_PLATFORM_WINDOWS
+static LONG WINAPI
+sentry__crashpad_handler(EXCEPTION_POINTERS *ExceptionInfo)
 {
-    crashpad_state_t *data = (crashpad_state_t *)backend->data;
-    delete data->db;
-    data->db = nullptr;
+#else
+static bool
+sentry__crashpad_handler(int UNUSED(signum), siginfo_t *UNUSED(info),
+    ucontext_t *UNUSED(user_context))
+{
+    sentry__page_allocator_enable();
+    sentry__enter_signal_handler();
+#endif
+    SENTRY_DEBUG("flushing session and state before crashpad handler");
+
+    SENTRY_WITH_OPTIONS (options) {
+        sentry__write_crash_marker(options);
+        sentry_transport_t *transport = sentry__enforce_disk_transport(options);
+
+        sentry__end_current_session_with_status(SENTRY_SESSION_STATUS_CRASHED);
+
+        sentry__transport_dump_queue(transport, options->run);
+        sentry_transport_free(options->transport);
+        options->transport = transport;
+    }
+
+    SENTRY_DEBUG("handling control over to crashpad");
+#ifdef SENTRY_PLATFORM_WINDOWS
+    return g_previous_handler(ExceptionInfo);
 }
+#else
+    sentry__leave_signal_handler();
+    // we did not "handle" the signal, so crashpad should do that.
+    return false;
+}
+#endif
 
 static void
 sentry__crashpad_backend_startup(
@@ -200,6 +233,13 @@ sentry__crashpad_backend_startup(
         return;
     }
 
+#ifdef SENTRY_PLATFORM_LINUX
+    crashpad::CrashpadClient::SetFirstChanceExceptionHandler(
+        &sentry__crashpad_handler);
+#elif defined(SENTRY_PLATFORM_WINDOWS)
+    g_previous_handler = SetUnhandledExceptionFilter(&sentry__crashpad_handler);
+#endif
+
     if (!options->system_crash_reporter_enabled) {
         // Disable the system crash reporter. Especially on macOS, it takes
         // substantial time *after* crashpad has done its job.
@@ -208,6 +248,22 @@ sentry__crashpad_backend_startup(
         crashpad_info->set_system_crash_reporter_forwarding(
             crashpad::TriState::kDisabled);
     }
+}
+
+static void
+sentry__crashpad_backend_shutdown(sentry_backend_t *backend)
+{
+    crashpad_state_t *data = (crashpad_state_t *)backend->data;
+    delete data->db;
+    data->db = nullptr;
+
+#ifdef SENTRY_PLATFORM_WINDOWS
+    LPTOP_LEVEL_EXCEPTION_FILTER current_handler
+        = SetUnhandledExceptionFilter(g_previous_handler);
+    if (current_handler != &sentry__crashpad_handler) {
+        SetUnhandledExceptionFilter(current_handler);
+    }
+#endif
 }
 
 static void
