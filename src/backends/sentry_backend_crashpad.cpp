@@ -39,10 +39,6 @@ extern "C" {
 
 extern "C" {
 
-#ifdef SENTRY_PLATFORM_WINDOWS
-static LPTOP_LEVEL_EXCEPTION_FILTER g_previous_handler = NULL;
-#endif
-
 typedef struct {
     crashpad::CrashReportDatabase *db;
     sentry_path_t *event_path;
@@ -94,10 +90,10 @@ sentry__crashpad_backend_flush_scope(
     }
 }
 
-#ifndef SENTRY_PLATFORM_MACOS
+#if defined(SENTRY_PLATFORM_LINUX) || defined(SENTRY_PLATFORM_WINDOWS)
 #    ifdef SENTRY_PLATFORM_WINDOWS
-static LONG WINAPI
-sentry__crashpad_handler(EXCEPTION_POINTERS *ExceptionInfo)
+static bool
+sentry__crashpad_handler(EXCEPTION_POINTERS *UNUSED(ExceptionInfo))
 {
 #    else
 static bool
@@ -121,15 +117,12 @@ sentry__crashpad_handler(int UNUSED(signum), siginfo_t *UNUSED(info),
     }
 
     SENTRY_DEBUG("handling control over to crashpad");
-#    ifdef SENTRY_PLATFORM_WINDOWS
-    return g_previous_handler(ExceptionInfo);
-}
-#    else
+#    ifndef SENTRY_PLATFORM_WINDOWS
     sentry__leave_signal_handler();
+#    endif
     // we did not "handle" the signal, so crashpad should do that.
     return false;
 }
-#    endif
 #endif
 
 static void
@@ -237,11 +230,9 @@ sentry__crashpad_backend_startup(
         return;
     }
 
-#ifdef SENTRY_PLATFORM_LINUX
+#if defined(SENTRY_PLATFORM_LINUX) || defined(SENTRY_PLATFORM_WINDOWS)
     crashpad::CrashpadClient::SetFirstChanceExceptionHandler(
         &sentry__crashpad_handler);
-#elif defined(SENTRY_PLATFORM_WINDOWS)
-    g_previous_handler = SetUnhandledExceptionFilter(&sentry__crashpad_handler);
 #endif
 
     if (!options->system_crash_reporter_enabled) {
@@ -260,14 +251,6 @@ sentry__crashpad_backend_shutdown(sentry_backend_t *backend)
     crashpad_state_t *data = (crashpad_state_t *)backend->data;
     delete data->db;
     data->db = nullptr;
-
-#ifdef SENTRY_PLATFORM_WINDOWS
-    LPTOP_LEVEL_EXCEPTION_FILTER current_handler
-        = SetUnhandledExceptionFilter(g_previous_handler);
-    if (current_handler != &sentry__crashpad_handler) {
-        SetUnhandledExceptionFilter(current_handler);
-    }
-#endif
 }
 
 static void
