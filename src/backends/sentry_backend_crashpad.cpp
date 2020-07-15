@@ -94,18 +94,19 @@ sentry__crashpad_backend_flush_scope(
     }
 }
 
-#ifdef SENTRY_PLATFORM_WINDOWS
+#ifndef SENTRY_PLATFORM_MACOS
+#    ifdef SENTRY_PLATFORM_WINDOWS
 static LONG WINAPI
 sentry__crashpad_handler(EXCEPTION_POINTERS *ExceptionInfo)
 {
-#else
+#    else
 static bool
 sentry__crashpad_handler(int UNUSED(signum), siginfo_t *UNUSED(info),
     ucontext_t *UNUSED(user_context))
 {
     sentry__page_allocator_enable();
     sentry__enter_signal_handler();
-#endif
+#    endif
     SENTRY_DEBUG("flushing session and state before crashpad handler");
 
     SENTRY_WITH_OPTIONS (options) {
@@ -120,14 +121,15 @@ sentry__crashpad_handler(int UNUSED(signum), siginfo_t *UNUSED(info),
     }
 
     SENTRY_DEBUG("handling control over to crashpad");
-#ifdef SENTRY_PLATFORM_WINDOWS
+#    ifdef SENTRY_PLATFORM_WINDOWS
     return g_previous_handler(ExceptionInfo);
 }
-#else
+#    else
     sentry__leave_signal_handler();
     // we did not "handle" the signal, so crashpad should do that.
     return false;
 }
+#    endif
 #endif
 
 static void
